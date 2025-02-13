@@ -116,3 +116,31 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+
+## GRID and up-provider
+
+Now you can use the UP Provider anywhere in your app by importing the useUP hook:
+```
+import { useUP } from '@/components/contexts/UPContext';
+
+function YourComponent() {
+  const { walletConnected, accounts, connect, disconnect } = useUP();
+
+  useEffect(() => {
+    console.log('Wallet state:', { walletConnected, accounts });
+  }, [walletConnected, accounts]);
+
+  return (
+    <div>
+      {walletConnected ? (
+        <>
+          <div>Connected: {accounts[0]}</div>
+          <button onClick={disconnect}>Disconnect</button>
+        </>
+      ) : (
+        <button onClick={connect}>Connect UP</button>
+      )}
+    </div>
+  );
+}
+```

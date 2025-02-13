@@ -12,6 +12,7 @@
   "dependencies": {
     "@erc725/erc725.js": "^0.23.0",
     "@lukso/lsp-smart-contracts": "^0.14.0",
+    "@lukso/up-provider": "^0.3.2",
     "@lukso/web3-onboard-config": "^1.1.1",
     "@nextui-org/modal": "^2.0.28",
     "@nextui-org/react": "^2.2.9",

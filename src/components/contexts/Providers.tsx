@@ -1,22 +1,32 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
-import { WagmiProvider } from "wagmi";
+import { useState, useEffect } from "react";
+import { UPProvider } from "./UPContext";
+import WagmiProvider from "./WagmiProvider";
+import { ErrorBoundary } from "../ErrorBoundary";
 
-import { config } from "@/config/wagmi";
-import { NextUIProvider } from "@nextui-org/react";
-
-export function Providers(props: { children: ReactNode }) {
+export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null;
+  }
 
   return (
-    <NextUIProvider>
-      <WagmiProvider config={config} reconnectOnMount={false}>
+    <ErrorBoundary>
+      <WagmiProvider>
         <QueryClientProvider client={queryClient}>
-          {props.children}
+          <UPProvider>
+            {children}
+          </UPProvider>
         </QueryClientProvider>
       </WagmiProvider>
-    </NextUIProvider>
+    </ErrorBoundary>
   );
 }
