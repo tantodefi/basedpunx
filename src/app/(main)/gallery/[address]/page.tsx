@@ -4,22 +4,6 @@ import { getProfile, getTokens } from "@/actions/contract";
 import GridItem from "@/components/layout/GridItem";
 import Image from "next/image";
 
-// Define the profile type
-interface Profile {
-  name: string;
-  image: string;
-  description?: string;
-}
-
-// Type guard for profile
-function isValidProfile(profile: any): profile is Profile {
-  return (
-    profile &&
-    typeof profile.name === 'string' &&
-    typeof profile.image === 'string'
-  );
-}
-
 export async function generateMetadata({
   params,
 }: {
@@ -35,7 +19,7 @@ export async function generateMetadata({
   }
 
   return {
-    title: "Gallery | " + (isValidProfile(profile) ? profile.name : address),
+    title: "Gallery | " + profile.name,
     description: "BurntPunX Gallery",
   };
 }
@@ -51,11 +35,11 @@ export default async function Page({
   const tokens = await getTokens(address);
   const profile = await getProfile(address);
 
-  if (!profile || !isValidProfile(profile)) {
+  let blankTokens;
+
+  if (!profile) {
     notFound();
   }
-
-  let blankTokens;
 
   if (tokens.length < 12) {
     blankTokens = Array(12 - tokens.length).fill({});

@@ -9,20 +9,6 @@ export const IPFS_GATEWAYS = [
   'https://gateway.ipfs.io/ipfs/'
 ];
 
-// Create a default config without UP provider
-export const config = createConfig({
-  chains: [lukso],
-  multiInjectedProviderDiscovery: true,
-  connectors: [
-    injected(),
-  ],
-  ssr: true,
-  transports: {
-    [lukso.id]: http(),
-  },
-});
-
-// Keep getConfig for cases where UP provider is needed
 export const getConfig = (upProvider: any) => createConfig({
   chains: [lukso],
   multiInjectedProviderDiscovery: true,
