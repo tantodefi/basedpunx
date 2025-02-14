@@ -1,10 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { useAccount, useConnect } from 'wagmi';
+import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { custom } from 'viem';
 import { createWalletClient } from 'viem';
 import { lukso } from 'wagmi/chains';
+import { toast } from 'sonner';
 
 interface UPContextType {
   walletConnected: boolean;
@@ -12,6 +13,7 @@ interface UPContextType {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   isUPProvider: boolean;
+  provider: any;
 }
 
 const UPContext = createContext<UPContextType>({
@@ -20,6 +22,7 @@ const UPContext = createContext<UPContextType>({
   connect: async () => {},
   disconnect: async () => {},
   isUPProvider: false,
+  provider: null,
 });
 
 export const useUP = () => useContext(UPContext);
@@ -28,42 +31,41 @@ export function UPProvider({ children }: { children: React.ReactNode }) {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [walletConnected, setWalletConnected] = useState(false);
   const [isUPProvider, setIsUPProvider] = useState(false);
+  const [provider, setProvider] = useState<any>(null);
 
   const { connect: wagmiConnect, connectors } = useConnect();
   const { address, isConnected } = useAccount();
+  const { disconnect: wagmiDisconnect } = useDisconnect();
 
-  const publicClient = useMemo(() => {
-    if (typeof window === 'undefined') return null;
-    return window?.ethereum;
-  }, []);
-
+  // Initialize and check UP provider
   useEffect(() => {
-    // Check if UP Provider is available
-    const checkUPProvider = async () => {
-      if (publicClient) {
-        try {
-          const provider = await publicClient.request({ method: 'eth_requestAccounts' });
-          // Check if it's UP Provider by checking specific properties or methods
-          setIsUPProvider(!!provider && 'isUniversalProfileProvider' in publicClient);
-        } catch (error) {
-          console.error('Error checking UP Provider:', error);
-          setIsUPProvider(false);
+    const initProvider = async () => {
+      if (typeof window === 'undefined') return;
+      
+      const ethereum = window.ethereum;
+      if (!ethereum) return;
+
+      try {
+        const isUP = 'isUniversalProfileProvider' in ethereum;
+        setIsUPProvider(isUP);
+        
+        if (isUP) {
+          setProvider(ethereum);
+          const accounts = await ethereum.request({ method: 'eth_accounts' });
+          if (accounts?.length) {
+            setAccounts(accounts);
+            setWalletConnected(true);
+          }
         }
+      } catch (error) {
+        console.error('Error initializing UP provider:', error);
       }
     };
 
-    checkUPProvider();
-  }, [publicClient]);
+    initProvider();
+  }, []);
 
-  const walletClient = useMemo(() => {
-    if (!publicClient) return null;
-    
-    return createWalletClient({
-      chain: lukso,
-      transport: custom(publicClient),
-    });
-  }, [publicClient]);
-
+  // Handle wagmi connection changes
   useEffect(() => {
     if (isConnected && address) {
       setAccounts([address]);
@@ -74,18 +76,36 @@ export function UPProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isConnected, address]);
 
-  const connect = async () => {
-    try {
-      // Try to find UP Provider connector first
-      const upConnector = connectors.find(c => c.id === 'up-provider');
-      const connector = upConnector || connectors[0];
-      
-      if (!connector) {
-        throw new Error('No connector found');
+  // Auto-connect if UP provider is available
+  useEffect(() => {
+    const autoConnect = async () => {
+      if (!isUPProvider || !provider || isConnected) return;
+
+      try {
+        const upConnector = connectors.find(c => c.id === 'up-provider');
+        if (upConnector) {
+          await wagmiConnect({ connector: upConnector });
+        }
+      } catch (error) {
+        console.error('Error auto-connecting:', error);
       }
-      
-      await wagmiConnect({ connector });
-      setWalletConnected(true);
+    };
+
+    autoConnect();
+  }, [isUPProvider, provider, connectors, wagmiConnect, isConnected]);
+
+  const connect = async () => {
+    if (!isUPProvider) {
+      toast('Please install UP Browser Extension');
+      return;
+    }
+
+    try {
+      const upConnector = connectors.find(c => c.id === 'up-provider');
+      if (!upConnector) {
+        throw new Error('UP Provider not found');
+      }
+      await wagmiConnect({ connector: upConnector });
     } catch (error) {
       console.error('Error connecting wallet:', error);
       setWalletConnected(false);
@@ -94,6 +114,7 @@ export function UPProvider({ children }: { children: React.ReactNode }) {
 
   const disconnect = async () => {
     try {
+      await wagmiDisconnect();
       setWalletConnected(false);
       setAccounts([]);
     } catch (error) {
@@ -101,13 +122,14 @@ export function UPProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const value = {
+  const value = useMemo(() => ({
     walletConnected,
     accounts,
     connect,
     disconnect,
     isUPProvider,
-  };
+    provider,
+  }), [walletConnected, accounts, isUPProvider, provider]);
 
   return <UPContext.Provider value={value}>{children}</UPContext.Provider>;
 } 

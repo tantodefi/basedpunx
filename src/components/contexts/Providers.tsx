@@ -14,6 +14,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     setMounted(true);
   }, []);
 
+  // During SSR and initial mount, return a placeholder
   if (!mounted) {
     return null;
   }

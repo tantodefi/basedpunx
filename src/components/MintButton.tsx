@@ -1,126 +1,176 @@
 "use client";
 import { useAccount } from "wagmi";
 import { useMinter } from "./contexts/MinterContext";
-import { getEthersSigner } from "@/utils/web3";
-import { config } from "@/config/wagmi";
-import { ethers } from "ethers";
 import { chill_address, contract_address } from "@/config/consts";
 import abi from "@/config/abi.json";
 import { useTransition } from "react";
 import { toast } from "sonner";
 import { Loader } from "@/utils/icons/loader";
 import lsp7 from "@lukso/lsp-smart-contracts/artifacts/LSP7DigitalAsset.json";
+import { useUP } from "./contexts/UPContext";
+import { createWalletClient, custom, parseEther, encodeFunctionData } from "viem";
+import { lukso } from "viem/chains";
 
 const MintButton = () => {
   const account = useAccount();
+  const { isUPProvider, walletConnected, provider } = useUP();
   const { count, chill, setFrameImage, error } = useMinter();
   const [isPending, startTransition] = useTransition();
 
   // Mint function
-  const mint = () => {
+  const mint = async () => {
+    if (!isUPProvider || !walletConnected || !provider) {
+      toast.error("Please connect with UP Browser Extension");
+      return;
+    }
+
     startTransition(async () => {
       setFrameImage("");
       try {
-        // Calculate total lyx
         const total = (parseInt(count) * 4.2).toFixed(1);
-        const provider = await getEthersSigner(config);
 
-        // init contract
-        const contract = new ethers.Contract(
-          contract_address,
-          abi.abi,
-          provider
-        );
+        // Create wallet client with UP provider
+        const walletClient = createWalletClient({
+          chain: lukso,
+          transport: custom(provider)
+        });
 
-        // call mint
-        await contract
-          .mint(ethers.toBigInt(parseInt(count)), {
-            gasLimit: 300000,
-            value: ethers.parseEther(`${total}`),
-          })
-          .then(async (receipt) => {
-            toast.success("Minted!");
-            await new Promise((resolve) => setTimeout(resolve, 10000));
+        // Get the account address
+        const [address] = await walletClient.getAddresses();
+        
+        // Encode the mint function call
+        const mintData = encodeFunctionData({
+          abi: abi.abi,
+          functionName: 'mint',
+          args: [BigInt(count)]
+        });
 
-            // get last token minted
-            const tokens = await contract.tokenIdsOf(account.address);
-            const token = tokens[tokens.length - 1];
+        // Send the transaction
+        const hash = await walletClient.sendTransaction({
+          account: address,
+          to: contract_address,
+          data: mintData,
+          value: parseEther(total),
+          chain: lukso,
+        });
 
-            // set display image as last owned token
+        // Wait for transaction
+        const receipt = await walletClient.waitForTransactionReceipt({ hash });
+
+        if (receipt.status === 'success') {
+          toast.success("Minted!");
+
+          // Get token IDs (using provider.request directly since we need to call a read method)
+          const tokenIds = await provider.request({
+            method: 'eth_call',
+            params: [{
+              to: contract_address,
+              data: encodeFunctionData({
+                abi: abi.abi,
+                functionName: 'tokenIdsOf',
+                args: [address]
+              })
+            }]
+          });
+
+          // Get the last token ID
+          const tokens = tokenIds ? tokenIds[tokenIds.length - 1] : null;
+          if (tokens) {
             setFrameImage(
               `https://ipfs.filebase.io/ipfs/QmSKbCkmib8koVyYA2Xum3hngzNCLVijFkiQBg23VHjcMV/BurntPunX_${parseInt(
-                token
+                tokens.toString()
               )}.png`
             );
-          })
-          .catch((e) => {
-            toast.error("Error minting");
-          });
+          }
+        }
       } catch (e) {
-        return;
+        console.error("Mint error:", e);
+        toast.error("Error minting: " + (e as Error).message);
       }
     });
   };
 
-  // Chill Mint Function
-  const chillMint = () => {
+  // Chill Mint Function with viem
+  const chillMint = async () => {
+    if (!isUPProvider || !walletConnected || !provider) {
+      toast.error("Please connect with UP Browser Extension");
+      return;
+    }
+
     startTransition(async () => {
       setFrameImage("");
       try {
-        // Calculate total $chill
         const total = parseInt(count) * 6969;
-        const provider = await getEthersSigner(config);
+        
+        // Create wallet client
+        const walletClient = createWalletClient({
+          chain: lukso,
+          transport: custom(provider)
+        });
 
-        // init chill contract
-        const access = new ethers.Contract(chill_address, lsp7.abi, provider);
+        // Get the account address
+        const [address] = await walletClient.getAddresses();
 
-        try {
-          // authorize chill use
-          await access.authorizeOperator(
-            contract_address,
-            ethers.parseEther(`${total}`),
-            "0x"
-          );
-        } catch (e) {
-          toast.error("Error authorizing chill");
-          return;
-        }
+        // First authorize the operator
+        const authorizeData = encodeFunctionData({
+          abi: lsp7.abi,
+          functionName: 'authorizeOperator',
+          args: [contract_address, parseEther(total.toString()), "0x"]
+        });
 
-        // init contract
-        const contract = new ethers.Contract(
-          contract_address,
-          abi.abi,
-          provider
-        );
+        const authHash = await walletClient.sendTransaction({
+          account: address,
+          to: chill_address,
+          data: authorizeData,
+          chain: lukso,
+        });
 
-        // call chill mint
-        await contract
-          .chillMint(ethers.toBigInt(parseInt(count)), {
-            gasLimit: 300000,
-          })
-          .then(async (receipt) => {
-            toast.success("Minted!");
+        await walletClient.waitForTransactionReceipt({ hash: authHash });
 
-            // give time for transaction/block
-            // to process
-            await new Promise((resolve) => setTimeout(resolve, 10000));
+        // Then do the chill mint
+        const mintData = encodeFunctionData({
+          abi: abi.abi,
+          functionName: 'chillMint',
+          args: [BigInt(count)]
+        });
 
-            // get last token minted
-            const tokens = await contract.tokenIdsOf(account.address);
-            const token = tokens[tokens.length - 1];
+        const mintHash = await walletClient.sendTransaction({
+          account: address,
+          to: contract_address,
+          data: mintData,
+          chain: lukso,
+        });
 
-            // set display image as last owned token
+        const receipt = await walletClient.waitForTransactionReceipt({ hash: mintHash });
+
+        if (receipt.status === 'success') {
+          toast.success("Minted!");
+
+          // Get token IDs
+          const tokenIds = await provider.request({
+            method: 'eth_call',
+            params: [{
+              to: contract_address,
+              data: encodeFunctionData({
+                abi: abi.abi,
+                functionName: 'tokenIdsOf',
+                args: [address]
+              })
+            }]
+          });
+
+          const tokens = tokenIds ? tokenIds[tokenIds.length - 1] : null;
+          if (tokens) {
             setFrameImage(
               `https://ipfs.filebase.io/ipfs/QmSKbCkmib8koVyYA2Xum3hngzNCLVijFkiQBg23VHjcMV/BurntPunX_${parseInt(
-                token
+                tokens.toString()
               )}.png`
             );
-          })
-          .catch((e) => {
-            toast.error("Error minting");
-          });
+          }
+        }
       } catch (e) {
-        return;
+        console.error("Mint error:", e);
+        toast.error("Error minting: " + (e as Error).message);
       }
     });
   };
